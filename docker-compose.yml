@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000-3010:3000"
+    environment:
+      - PORT=3000
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - TRIPAY_API_URL=${TRIPAY_API_URL}
+      - TRIPAY_API_KEY=${TRIPAY_API_KEY}
+      - TRIPAY_PRIVATE_KEY=${TRIPAY_PRIVATE_KEY}
+      - TRIPAY_MERCHANT_CODE=${TRIPAY_MERCHANT_CODE}
+    restart: unless-stopped

@@ -1,0 +1,22 @@
+{
+  "name": "server",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.14",
+    "@supabase/supabase-js": "^2.103.3",
+    "axios": "^1.15.0",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^17.4.2",
+    "hono": "^4.7.0"
+  },
+  "devDependencies": {
+    "@types/crypto-js": "^4.2.2",
+    "tsx": "^4.21.0"
+  }
+}
