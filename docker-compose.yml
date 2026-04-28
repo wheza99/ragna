@@ -34,9 +34,8 @@ services:
       - TRIPAY_API_KEY=${TRIPAY_API_KEY}
       - TRIPAY_PRIVATE_KEY=${TRIPAY_PRIVATE_KEY}
       - TRIPAY_MERCHANT_CODE=${TRIPAY_MERCHANT_CODE}
-      - WAHA_API_URL=${WAHA_API_URL}
-      - WAHA_API_KEY=${WAHA_API_KEY}
-      - RAGNA_WEBHOOK_URL=${RAGNA_WEBHOOK_URL}
+      - WASHARP_API_URL=${WASHARP_API_URL}
+      - WASHARP_API_KEY=${WASHARP_API_KEY}
     depends_on:
       pocketbase:
         condition: service_healthy

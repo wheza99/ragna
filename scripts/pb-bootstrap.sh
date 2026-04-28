@@ -59,6 +59,7 @@ create_collection "agents" '{
     {"name": "system_prompt", "type": "text", "required": false},
     {"name": "model", "type": "text", "required": true},
     {"name": "washarp_session_id", "type": "text", "required": false},
+    {"name": "washarp_waha_session", "type": "text", "required": false},
     {"name": "washarp_phone", "type": "text", "required": false},
     {"name": "washarp_status", "type": "select", "required": false, "values": ["connecting","connected","disconnected","failed"], "maxSelect": 1},
     {"name": "status", "type": "select", "required": true, "values": ["active","inactive","draft"], "maxSelect": 1},
