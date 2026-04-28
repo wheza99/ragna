@@ -12,7 +12,10 @@ import { Badge } from '@/components/ui/badge'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
-import { Plus, Pencil, Trash2, Bot, Search as SearchIcon } from 'lucide-react'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import { Plus, Pencil, Trash2, Bot, QrCode, RefreshCw } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { StatsCard } from '@/components/patterns/stats-card'
 import { SearchBar } from '@/components/patterns/search-bar'
@@ -28,10 +31,13 @@ interface Agent {
   description: string
   system_prompt: string
   model: string
-  whatsapp_phone: string
+  washarp_session_id: string
+  washarp_phone: string
+  washarp_status: string
   status: string
   created: string
   created_at: string
+  qr?: string
 }
 
 interface AgentForm {
@@ -39,7 +45,6 @@ interface AgentForm {
   description: string
   system_prompt: string
   model: string
-  whatsapp_phone: string
   status: string
 }
 
@@ -48,7 +53,6 @@ const emptyForm: AgentForm = {
   description: '',
   system_prompt: '',
   model: 'llama-3.3-70b-versatile',
-  whatsapp_phone: '',
   status: 'draft',
 }
 
@@ -58,11 +62,17 @@ const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'secon
   draft: { label: 'Draft', variant: 'outline' },
 }
 
+const WA_STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; className?: string }> = {
+  connected: { label: 'Connected', variant: 'default', className: 'bg-green-600' },
+  connecting: { label: 'Connecting', variant: 'outline' },
+  disconnected: { label: 'Disconnected', variant: 'secondary' },
+  failed: { label: 'Failed', variant: 'destructive' },
+}
+
 const MODEL_OPTIONS = [
   { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
   { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B' },
   { value: 'gemma2-9b-it', label: 'Gemma 2 9B' },
-  { value: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B' },
 ]
 
 // ── Component ───────────────────────────────────────────────
@@ -76,6 +86,14 @@ export function Dashboard() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<AgentForm>(emptyForm)
+
+  // QR dialog
+  const [qrDialogOpen, setQrDialogOpen] = useState(false)
+  const [qrAgent, setQrAgent] = useState<Agent | null>(null)
+  const [qrData, setQrData] = useState<string | null>(null)
+  const [qrStatus, setQrStatus] = useState<string>('')
+  const [qrPhone, setQrPhone] = useState<string>('')
+  const [qrLoading, setQrLoading] = useState(false)
 
   const [search, setSearch] = useState('')
   const PAGE_SIZE = 10
@@ -118,7 +136,6 @@ export function Dashboard() {
       description: agent.description || '',
       system_prompt: agent.system_prompt || '',
       model: agent.model,
-      whatsapp_phone: agent.whatsapp_phone || '',
       status: agent.status,
     })
     setSheetOpen(true)
@@ -130,7 +147,6 @@ export function Dashboard() {
       description: form.description || undefined,
       system_prompt: form.system_prompt || undefined,
       model: form.model,
-      whatsapp_phone: form.whatsapp_phone || undefined,
       status: form.status,
     }
     if (editingId) {
@@ -138,22 +154,50 @@ export function Dashboard() {
         method: 'PUT',
         body: JSON.stringify(payload),
       })
+      setSheetOpen(false)
+      fetchAgents()
     } else {
-      await authFetch('/api/agents', {
+      // Create agent — server will create WAHA session + return QR
+      const res = await authFetch('/api/agents', {
         method: 'POST',
         body: JSON.stringify(payload),
       })
+      const agent = await res.json()
+
+      setSheetOpen(false)
+      fetchAgents()
+
+      // Show QR dialog
+      if (agent.qr) {
+        setQrAgent(agent)
+        setQrData(agent.qr)
+        setQrStatus(agent.washarp_status || 'connecting')
+        setQrPhone(agent.washarp_phone || '')
+        setQrDialogOpen(true)
+      }
     }
-    setSheetOpen(false)
-    setForm(emptyForm)
-    setEditingId(null)
-    fetchAgents()
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Hapus agent ini? Semua tools dan messages juga akan dihapus.')) return
+    if (!confirm('Hapus agent ini? Semua tools, messages, dan WhatsApp session juga akan dihapus.')) return
     await authFetch(`/api/agents/${id}`, { method: 'DELETE' })
     fetchAgents()
+  }
+
+  const refreshQR = async (agent: Agent) => {
+    setQrLoading(true)
+    try {
+      const res = await authFetch(`/api/agents/${agent.id}/qr`, { method: 'POST' })
+      const data = await res.json()
+      setQrData(data.qr)
+      setQrStatus(data.status)
+      setQrPhone(data.phone_number || '')
+      fetchAgents()
+    } catch (err) {
+      console.error('Failed to refresh QR:', err)
+    } finally {
+      setQrLoading(false)
+    }
   }
 
   const updateField = (field: keyof AgentForm, value: string) => {
@@ -161,7 +205,7 @@ export function Dashboard() {
   }
 
   const activeCount = filtered.filter((a) => a.status === 'active').length
-  const draftCount = filtered.filter((a) => a.status === 'draft').length
+  const waConnectedCount = filtered.filter((a) => a.washarp_status === 'connected').length
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-6">
@@ -183,8 +227,7 @@ export function Dashboard() {
       <div className="flex gap-4 mb-6">
         <StatsCard value={filtered.length} label="Total" />
         <StatsCard value={activeCount} label="Active" className="text-green-600" />
-        <StatsCard value={draftCount} label="Draft" />
-        <StatsCard value={filtered.length - activeCount - draftCount} label="Inactive" />
+        <StatsCard value={waConnectedCount} label="WhatsApp" className="text-green-600" />
       </div>
 
       {loading ? (
@@ -228,7 +271,17 @@ export function Dashboard() {
                   <TableCell></TableCell>
                   <TableCell className="text-sm font-mono">{agent.model}</TableCell>
                   <TableCell></TableCell>
-                  <TableCell className="text-sm">{agent.whatsapp_phone || '—'}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={agent.washarp_status || 'disconnected'} config={WA_STATUS_CONFIG} defaultKey="disconnected" />
+                      {(agent.washarp_status === 'connecting' || agent.washarp_status === 'disconnected') && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7"
+                          onClick={(e) => { e.stopPropagation(); refreshQR(agent) }}>
+                          <QrCode className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell></TableCell>
                   <TableCell>
                     <StatusBadge status={agent.status} config={STATUS_CONFIG} defaultKey="draft" />
@@ -302,19 +355,63 @@ export function Dashboard() {
                 <option value="inactive">Inactive</option>
               </select>
             </div>
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="whatsapp_phone">WhatsApp Phone (Washarp)</Label>
-              <Input id="whatsapp_phone" placeholder="6281234567890"
-                value={form.whatsapp_phone} onChange={(e) => updateField('whatsapp_phone', e.target.value)} />
-            </div>
           </div>
-          <div className="px-4 mt-4">
+          <div className="px-4 mt-6">
             <Button onClick={handleSubmit} className="w-full">
               {editingId ? 'Simpan Perubahan' : 'Tambah Agent'}
             </Button>
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* QR Code Dialog */}
+      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5" />
+              Scan WhatsApp QR
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-4">
+            {qrStatus === 'connected' ? (
+              <>
+                <div className="h-16 w-16 rounded-full bg-green-100 flex items-center justify-center">
+                  <Bot className="h-8 w-8 text-green-600" />
+                </div>
+                <div className="text-center">
+                  <p className="font-medium text-green-600">WhatsApp Connected!</p>
+                  <p className="text-sm text-muted-foreground">{qrPhone}</p>
+                </div>
+              </>
+            ) : qrData ? (
+              <>
+                <img src={qrData} alt="QR Code" className="w-64 h-64 rounded-lg border" />
+                <div className="text-center">
+                  <StatusBadge status={qrStatus} config={WA_STATUS_CONFIG} defaultKey="connecting" />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Scan QR ini dengan WhatsApp kamu
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="text-center">
+                <p className="text-muted-foreground">QR code belum tersedia</p>
+                <StatusBadge status={qrStatus} config={WA_STATUS_CONFIG} defaultKey="connecting" />
+              </div>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => qrAgent && refreshQR(qrAgent)}
+              disabled={qrLoading}
+            >
+              <RefreshCw className={`h-4 w-4 mr-1 ${qrLoading ? 'animate-spin' : ''}`} />
+              Refresh QR
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

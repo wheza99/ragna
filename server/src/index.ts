@@ -12,7 +12,7 @@ process.on('unhandledRejection', (err) => {
 import { pb, verifyUser } from './pocketbase'
 import { createApiKey, listApiKeys, deleteApiKey, verifyApiKey } from './api-keys'
 import { createPayment, listPayments, getPayment, checkAndUpdatePaymentStatus } from './payments'
-import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, listTools, createTool, updateTool, deleteTool, listMessages } from './agents'
+import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, listTools, createTool, updateTool, deleteTool, listMessages, refreshAgentQR } from './agents'
 
 // ── Config ──────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3000
@@ -274,6 +274,17 @@ app.delete('/api/agents/:id', async (c) => {
   try {
     await deleteAgent(user.id, id)
     return c.json({ ok: true })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400)
+  }
+})
+
+app.post('/api/agents/:id/qr', async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id')
+  try {
+    const result = await refreshAgentQR(user.id, id)
+    return c.json(result)
   } catch (err: any) {
     return c.json({ error: err.message }, 400)
   }

@@ -34,7 +34,9 @@ interface Agent {
   description: string
   system_prompt: string
   model: string
-  whatsapp_phone: string
+  washarp_session_id: string
+  washarp_phone: string
+  washarp_status: string
   status: string
   created_at: string
 }
@@ -215,7 +217,9 @@ export function DashboardDetail() {
     { label: 'Description', value: agent.description, full: true, copy: false },
     { label: 'Model', value: agent.model, full: false, copy: false },
     { label: 'Status', value: agent.status, full: false, copy: false },
-    { label: 'WhatsApp', value: agent.whatsapp_phone || '—', full: false, copy: true },
+    { label: 'WAHA Session', value: agent.washarp_session_id || '—', full: false, copy: true },
+    { label: 'WA Status', value: agent.washarp_status || '—', full: false, copy: false },
+    { label: 'WA Phone', value: agent.washarp_phone || '—', full: false, copy: true },
     { label: 'Created', value: agent.created_at ? new Date(agent.created_at).toLocaleString('id-ID') : '-', full: false, copy: false },
     { label: 'System Prompt', value: agent.system_prompt || '—', full: true, copy: false },
   ] : []
@@ -242,8 +246,8 @@ export function DashboardDetail() {
               <div className="flex items-center gap-2">
                 <Bot className="h-6 w-6 text-primary" />
                 <h1 className="text-2xl font-bold">{agent.name}</h1>
-                <Badge variant={agent.status === 'active' ? 'default' : 'secondary'} className={agent.status === 'active' ? 'bg-green-600' : ''}>
-                  {agent.status}
+                <Badge variant={agent.washarp_status === 'connected' ? 'default' : 'secondary'} className={agent.washarp_status === 'connected' ? 'bg-green-600' : ''}>
+                  WA: {agent.washarp_status || '—'}
                 </Badge>
               </div>
               <p className="text-muted-foreground text-sm mt-1">{agent.description || 'No description'}</p>

@@ -1,24 +1,69 @@
 import { pb } from './pocketbase'
+import { waha } from './washarp'
+
+// ── Helpers ─────────────────────────────────────────────────
+
+function fmtAgent(r: any) {
+  return {
+    ...r,
+    created_at: r.created,
+  }
+}
 
 // ── Agents CRUD ─────────────────────────────────────────────
 
 export async function listAgents(userId: string) {
   const items = await pb.admin.list('agents', `(user_id='${userId}')`, '-created')
-  return items.map((r: any) => ({
-    ...r,
-    created_at: r.created,
-  }))
+  return items.map(fmtAgent)
 }
 
 export async function getAgent(userId: string, id: string) {
   const record = await pb.admin.getOne('agents', id)
   if (!record || record.user_id !== userId) throw new Error('Agent not found')
-  return { ...record, created_at: record.created }
+  return fmtAgent(record)
 }
 
 export async function createAgent(userId: string, payload: any) {
-  const record = await pb.admin.create('agents', { ...payload, user_id: userId })
-  return getAgent(userId, record.id)
+  // 1. Create agent record
+  const record = await pb.admin.create('agents', {
+    ...payload,
+    user_id: userId,
+    washarp_status: 'connecting',
+  })
+
+  const agentId = record.id
+
+  // 2. Start WAHA session
+  const sessionName = `ragna-${agentId.slice(0, 8)}`
+  let qr: string | null = null
+  let phone: string | null = null
+  let status = 'connecting'
+
+  try {
+    const webhookUrl = process.env.RAGNA_WEBHOOK_URL || ''
+    await waha.startSession(sessionName, webhookUrl || undefined)
+
+    // Wait a moment for WAHA to generate QR
+    await new Promise((r) => setTimeout(r, 2000))
+
+    const info = await waha.getSessionWithQR(sessionName)
+    qr = info.qr
+    phone = info.phone_number
+    status = info.status
+  } catch (err: any) {
+    console.error('[WAHA] startSession error:', err?.response?.data || err?.message)
+    status = 'failed'
+  }
+
+  // 3. Update agent with session info
+  await pb.admin.update('agents', agentId, {
+    washarp_session_id: sessionName,
+    washarp_phone: phone,
+    washarp_status: status,
+  })
+
+  const agent = await getAgent(userId, agentId)
+  return { ...agent, qr }
 }
 
 export async function updateAgent(userId: string, id: string, payload: any) {
@@ -28,7 +73,13 @@ export async function updateAgent(userId: string, id: string, payload: any) {
 }
 
 export async function deleteAgent(userId: string, id: string) {
-  await getAgent(userId, id)
+  const agent = await getAgent(userId, id)
+
+  // Stop WAHA session if exists
+  if (agent.washarp_session_id) {
+    try { await waha.stopSession(agent.washarp_session_id) } catch {}
+  }
+
   // Delete related tools and messages
   const tools = await pb.admin.list('tools', `(agent_id='${id}')`)
   for (const t of tools) {
@@ -39,6 +90,32 @@ export async function deleteAgent(userId: string, id: string) {
     await pb.admin.delete('messages', m.id)
   }
   await pb.admin.delete('agents', id)
+}
+
+// ── Refresh QR for agent ────────────────────────────────────
+export async function refreshAgentQR(userId: string, id: string) {
+  const agent = await getAgent(userId, id)
+  if (!agent.washarp_session_id) throw new Error('No WhatsApp session')
+
+  // Re-start session if disconnected
+  if (agent.washarp_status === 'disconnected' || agent.washarp_status === 'failed') {
+    try { await waha.startSession(agent.washarp_session_id) } catch {}
+    await new Promise((r) => setTimeout(r, 2000))
+  }
+
+  const info = await waha.getSessionWithQR(agent.washarp_session_id)
+
+  // Update agent
+  await pb.admin.update('agents', id, {
+    washarp_status: info.status,
+    washarp_phone: info.phone_number,
+  })
+
+  return {
+    status: info.status,
+    qr: info.qr,
+    phone_number: info.phone_number,
+  }
 }
 
 // ── Tools CRUD ──────────────────────────────────────────────
