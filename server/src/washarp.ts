@@ -53,8 +53,18 @@ export async function restartSessionQR(pbSessionId: string) {
   return res.data
 }
 
+// ── Stop/Disconnect Session ──────────────────────────────────
+export async function stopSession(pbSessionId: string) {
+  const res = await axios.post(`${getBaseUrl()}/public/sessions/${pbSessionId}/disconnect`, {}, {
+    headers: headers(),
+    timeout: 15000,
+  })
+  return res.data
+}
+
 export const washarp = {
   createSession,
   getSessionQR,
   restartSessionQR,
+  stopSession,
 }

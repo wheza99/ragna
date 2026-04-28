@@ -79,7 +79,13 @@ export async function updateAgent(userId: string, id: string, payload: any) {
 
 export async function deleteAgent(userId: string, id: string) {
   const agent = await getAgent(userId, id)
-  // Note: session cleanup is handled by Washarp, we just clear the reference
+  // Delete Washarp session
+  if (agent.washarp_session_id) {
+    try { await washarp.stopSession(agent.washarp_session_id) } catch (err) {
+      console.error('[Washarp] delete session error:', err)
+    }
+  }
+
   // Delete related tools and messages
   const tools = await pb.admin.list('tools', `(agent_id='${id}')`)
   for (const t of tools) {
