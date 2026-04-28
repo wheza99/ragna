@@ -1,6 +1,11 @@
 # ── Stage 1: Build React ─────────────────────────────────
 FROM node:22-alpine AS client-build
 WORKDIR /app/client
+
+# Build-time env vars untuk Vite (VITE_* di-bake ke bundle)
+ARG VITE_POCKETBASE_URL
+ENV VITE_POCKETBASE_URL=$VITE_POCKETBASE_URL
+
 COPY client/package*.json ./
 RUN npm ci
 COPY client/ ./

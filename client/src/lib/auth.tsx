@@ -1,14 +1,16 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { supabase } from '@/lib/supabase'
-import type { User, Session } from '@supabase/supabase-js'
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
+import { pb } from '@/lib/pocketbase'
+
+interface User {
+  id: string
+  email: string
+}
 
 interface AuthContextType {
   user: User | null
-  session: Session | null
   loading: boolean
   signUp: (email: string, password: string) => Promise<{ error: string | null }>
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
-  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -16,53 +18,64 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-      setLoading(false)
+    // Check if already authenticated
+    if (pb.authStore.isValid) {
+      setUser({
+        id: pb.authStore.record!.id,
+        email: pb.authStore.record!.email,
+      })
+    }
+    setLoading(false)
+
+    // Listen for auth changes (login, logout, token refresh)
+    const unsubscribe = pb.authStore.onChange((_token: string, record: any) => {
+      if (record) {
+        setUser({ id: record.id, email: record.email })
+      } else {
+        setUser(null)
+      }
     })
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session)
-        setUser(session?.user ?? null)
-      }
-    )
-
-    return () => subscription.unsubscribe()
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
-  const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password })
-    return { error: error?.message ?? null }
-  }
+  const signUp = useCallback(async (email: string, password: string) => {
+    try {
+      await pb.collection('users').create({
+        email,
+        password,
+        passwordConfirm: password,
+      })
+      // Auto-login after registration
+      await pb.collection('users').authWithPassword(email, password)
+      return { error: null }
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Registration failed'
+      return { error: message }
+    }
+  }, [])
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return { error: error?.message ?? null }
-  }
+  const signIn = useCallback(async (email: string, password: string) => {
+    try {
+      await pb.collection('users').authWithPassword(email, password)
+      return { error: null }
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Login failed'
+      return { error: message }
+    }
+  }, [])
 
-  const signOut = async () => {
-    await supabase.auth.signOut()
-  }
-
-  const signInWithGoogle = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/todos`,
-      },
-    })
-  }
+  const signOut = useCallback(async () => {
+    pb.authStore.clear()
+  }, [])
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )
