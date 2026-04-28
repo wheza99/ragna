@@ -112,6 +112,28 @@ export async function refreshAgentQR(userId: string, id: string) {
   }
 }
 
+// ── Check WA status (lightweight, for polling) ────────────
+export async function checkAgentWAStatus(userId: string, id: string) {
+  const agent = await getAgent(userId, id)
+  if (!agent.washarp_session_id) return { status: 'disconnected', phone_number: null }
+
+  const result = await washarp.getSessionQR(agent.washarp_session_id)
+
+  // Update agent record
+  if (result.status !== agent.washarp_status || result.phone_number !== agent.washarp_phone) {
+    await pb.admin.update('agents', id, {
+      washarp_status: result.status,
+      washarp_phone: result.phone_number || '',
+    })
+  }
+
+  return {
+    status: result.status,
+    qr: result.qr,
+    phone_number: result.phone_number,
+  }
+}
+
 // ── Tools CRUD ──────────────────────────────────────────────
 
 export async function listTools(userId: string, agentId: string) {

@@ -200,6 +200,27 @@ export function Dashboard() {
     }
   }
 
+  // ── Poll WA status saat QR dialog terbuka ──────────────────
+  useEffect(() => {
+    if (!qrDialogOpen || !qrAgent) return
+    if (qrStatus === 'connected') return
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await authFetch(`/api/agents/${qrAgent.id}/wa-status`)
+        const data = await res.json()
+        setQrStatus(data.status)
+        setQrPhone(data.phone_number || '')
+        if (data.qr) setQrData(data.qr)
+        if (data.status === 'connected') {
+          fetchAgents()
+        }
+      } catch {}
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [qrDialogOpen, qrAgent, qrStatus])
+
   const updateField = (field: keyof AgentForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
