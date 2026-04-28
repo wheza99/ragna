@@ -62,9 +62,23 @@ export async function stopSession(pbSessionId: string) {
   return res.data
 }
 
+// ── Send Text Message ────────────────────────────────────────
+export async function sendText(pbSessionId: string, to: string, text: string) {
+  const res = await axios.post(`${getBaseUrl()}/public/send-text`, {
+    from: pbSessionId,
+    to,
+    text,
+  }, {
+    headers: headers(),
+    timeout: 30000,
+  })
+  return res.data
+}
+
 export const washarp = {
   createSession,
   getSessionQR,
   restartSessionQR,
   stopSession,
+  sendText,
 }

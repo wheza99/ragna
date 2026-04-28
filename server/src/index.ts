@@ -14,6 +14,7 @@ import { createApiKey, listApiKeys, deleteApiKey, verifyApiKey } from './api-key
 import { createPayment, listPayments, getPayment, checkAndUpdatePaymentStatus } from './payments'
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, listTools, createTool, updateTool, deleteTool, listMessages, refreshAgentQR, checkAgentWAStatus } from './agents'
 import { createMessage } from './agents'
+import { washarp } from './washarp'
 
 // ── Config ──────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3000
@@ -427,7 +428,9 @@ app.post('/api/webhook/washarp', async (c) => {
         })
         console.log(`[Webhook] Saved inbound message from ${from} for agent ${agent.id}`)
 
-        // TODO: Process with AI agent (Groq) and send reply
+        // TODO: Process with AI agent (Groq) → washarp.sendText() to reply
+        // Example: const reply = await processWithGroq(agent, text)
+        //          await washarp.sendText(agent.washarp_session_id, from + '@c.us', reply)
       }
     } catch (err) {
       console.error('[Webhook] Failed to save message:', err)
