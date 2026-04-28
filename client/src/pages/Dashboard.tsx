@@ -1,25 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { authFetch } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
+  Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
-import { Plus, Pencil, Trash2, ClipboardList, Eye } from 'lucide-react'
+import { Plus, Pencil, Trash2, Bot, Search as SearchIcon } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { StatsCard } from '@/components/patterns/stats-card'
 import { SearchBar } from '@/components/patterns/search-bar'
@@ -29,173 +22,178 @@ import { StatusBadge } from '@/components/patterns/status-badge'
 
 // ── Types ───────────────────────────────────────────────────
 
-interface Todo {
-  id: number
-  text: string
-  done: boolean
-  created_at?: string
-  priority?: string
+interface Agent {
+  id: string
+  name: string
+  description: string
+  system_prompt: string
+  model: string
+  whatsapp_phone: string
+  status: string
+  created: string
+  created_at: string
 }
 
-interface TodoForm {
-  text: string
-  priority: string
+interface AgentForm {
+  name: string
+  description: string
+  system_prompt: string
+  model: string
+  whatsapp_phone: string
+  status: string
 }
 
-const emptyForm: TodoForm = { text: '', priority: 'medium' }
-
-const PRIORITY_CONFIG: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; className?: string }> = {
-  high: { label: 'High', variant: 'destructive' },
-  medium: { label: 'Medium', variant: 'default', className: 'bg-yellow-600' },
-  low: { label: 'Low', variant: 'secondary' },
+const emptyForm: AgentForm = {
+  name: '',
+  description: '',
+  system_prompt: '',
+  model: 'llama-3.3-70b-versatile',
+  whatsapp_phone: '',
+  status: 'draft',
 }
 
-const PRIORITY_OPTIONS = [
-  { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
+const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; className?: string }> = {
+  active: { label: 'Active', variant: 'default', className: 'bg-green-600' },
+  inactive: { label: 'Inactive', variant: 'secondary' },
+  draft: { label: 'Draft', variant: 'outline' },
+}
+
+const MODEL_OPTIONS = [
+  { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
+  { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B' },
+  { value: 'gemma2-9b-it', label: 'Gemma 2 9B' },
+  { value: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B' },
 ]
 
 // ── Component ───────────────────────────────────────────────
 
 export function Dashboard() {
   const navigate = useNavigate()
-  const [todos, setTodos] = useState<Todo[]>([])
+  const { user } = useAuth()
+  const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Create/Edit sheet
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState<TodoForm>(emptyForm)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [form, setForm] = useState<AgentForm>(emptyForm)
 
-  // View sheet
-  const [viewTodo, setViewTodo] = useState<Todo | null>(null)
-  const [viewOpen, setViewOpen] = useState(false)
-
-  // Search & pagination
   const [search, setSearch] = useState('')
   const PAGE_SIZE = 10
   const [page, setPage] = useState(1)
 
-  const filteredTodos = search
-    ? todos.filter((t) =>
-        t.text.toLowerCase().includes(search.toLowerCase()) ||
-        t.priority?.toLowerCase().includes(search.toLowerCase())
+  const filtered = search
+    ? agents.filter((a) =>
+        a.name.toLowerCase().includes(search.toLowerCase()) ||
+        a.description?.toLowerCase().includes(search.toLowerCase())
       )
-    : todos
+    : agents
 
-  const totalPages = Math.ceil(filteredTodos.length / PAGE_SIZE)
-  const paginatedTodos = filteredTodos.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  // ── Fetch ───────────────────────────────────────────────
-  const fetchTodos = async () => {
+  const fetchAgents = async () => {
     try {
-      const res = await authFetch('/api/todos')
+      const res = await authFetch('/api/agents')
       const data = await res.json()
-      setTodos(data)
+      setAgents(data)
     } catch (err) {
-      console.error('Failed to fetch todos:', err)
+      console.error('Failed to fetch agents:', err)
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    fetchTodos()
-  }, [])
+  useEffect(() => { fetchAgents() }, [])
 
-  // ── Sheet handlers ──────────────────────────────────────
   const openCreate = () => {
     setEditingId(null)
     setForm(emptyForm)
     setSheetOpen(true)
   }
 
-  const openEdit = (todo: Todo) => {
-    setEditingId(todo.id)
-    setForm({ text: todo.text, priority: todo.priority || 'medium' })
+  const openEdit = (agent: Agent) => {
+    setEditingId(agent.id)
+    setForm({
+      name: agent.name,
+      description: agent.description || '',
+      system_prompt: agent.system_prompt || '',
+      model: agent.model,
+      whatsapp_phone: agent.whatsapp_phone || '',
+      status: agent.status,
+    })
     setSheetOpen(true)
   }
 
-  const openView = (todo: Todo) => {
-    setViewTodo(todo)
-    setViewOpen(true)
-  }
-
   const handleSubmit = async () => {
+    const payload = {
+      name: form.name,
+      description: form.description || undefined,
+      system_prompt: form.system_prompt || undefined,
+      model: form.model,
+      whatsapp_phone: form.whatsapp_phone || undefined,
+      status: form.status,
+    }
     if (editingId) {
-      await authFetch(`/api/todos/${editingId}`, {
+      await authFetch(`/api/agents/${editingId}`, {
         method: 'PUT',
-        body: JSON.stringify({ done: false, priority: form.priority, text: form.text }),
+        body: JSON.stringify(payload),
       })
     } else {
-      await authFetch('/api/todos', {
+      await authFetch('/api/agents', {
         method: 'POST',
-        body: JSON.stringify({ text: `${form.priority}:${form.text}` }),
+        body: JSON.stringify(payload),
       })
     }
     setSheetOpen(false)
     setForm(emptyForm)
     setEditingId(null)
-    fetchTodos()
+    fetchAgents()
   }
 
-  const toggleTodo = async (id: number, done: boolean) => {
-    await authFetch(`/api/todos/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ done: !done }),
-    })
-    fetchTodos()
+  const handleDelete = async (id: string) => {
+    if (!confirm('Hapus agent ini? Semua tools dan messages juga akan dihapus.')) return
+    await authFetch(`/api/agents/${id}`, { method: 'DELETE' })
+    fetchAgents()
   }
 
-  const deleteTodo = async (id: number) => {
-    if (!confirm('Hapus todo ini?')) return
-    await authFetch(`/api/todos/${id}`, { method: 'DELETE' })
-    fetchTodos()
-  }
-
-  const updateField = (field: keyof TodoForm, value: string) => {
+  const updateField = (field: keyof AgentForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  // ── Stats ───────────────────────────────────────────────
-  const doneCount = filteredTodos.filter((t) => t.done).length
-  const highCount = filteredTodos.filter((t) => t.priority === 'high').length
+  const activeCount = filtered.filter((a) => a.status === 'active').length
+  const draftCount = filtered.filter((a) => a.status === 'draft').length
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-6">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <h1 className="text-2xl font-bold">Agents</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Kelola todo list kamu
+            Kelola AI agents kamu
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <SearchBar value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Cari todo..." />
+          <SearchBar value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Cari agent..." />
           <Button onClick={openCreate}>
-            <Plus className="h-4 w-4 mr-1" /> Tambah Todo
+            <Plus className="h-4 w-4 mr-1" /> Tambah Agent
           </Button>
         </div>
       </div>
 
-      {/* Stats */}
       <div className="flex gap-4 mb-6">
-        <StatsCard value={filteredTodos.length} label="Total" />
-        <StatsCard value={doneCount} label="Selesai" className="text-green-600" />
-        <StatsCard value={filteredTodos.length - doneCount} label="Pending" />
-        <StatsCard value={highCount} label="High Priority" className="text-red-500" />
+        <StatsCard value={filtered.length} label="Total" />
+        <StatsCard value={activeCount} label="Active" className="text-green-600" />
+        <StatsCard value={draftCount} label="Draft" />
+        <StatsCard value={filtered.length - activeCount - draftCount} label="Inactive" />
       </div>
 
-      {/* Table / Empty State */}
       {loading ? (
         <p className="text-center text-muted-foreground py-8">Loading...</p>
-      ) : filteredTodos.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <EmptyState
-          icon={ClipboardList}
-          title="todo"
-          description='Klik "Tambah Todo" untuk mulai.'
+          icon={Bot}
+          title="agent"
+          description='Klik "Tambah Agent" untuk mulai.'
           search={search || undefined}
         />
       ) : (
@@ -203,9 +201,11 @@ export function Dashboard() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-8 w-1/2">Todo</TableHead>
+                <TableHead className="pl-8 w-2/5">Agent</TableHead>
                 <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
-                <TableHead>Priority</TableHead>
+                <TableHead>Model</TableHead>
+                <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
+                <TableHead>WhatsApp</TableHead>
                 <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
@@ -213,54 +213,35 @@ export function Dashboard() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedTodos.map((todo) => (
+              {paginated.map((agent) => (
                 <TableRow
-                  key={todo.id}
+                  key={agent.id}
                   className="cursor-pointer"
-                  onClick={() => openView(todo)}
+                  onClick={() => navigate(`/agents/detail?id=${agent.id}`)}
                 >
-                  <TableCell className="pl-8 font-medium">
-                    <span className={todo.done ? 'line-through text-muted-foreground' : ''}>
-                      {todo.text}
-                    </span>
+                  <TableCell className="pl-8">
+                    <div>
+                      <p className="font-medium">{agent.name}</p>
+                      <p className="text-xs text-muted-foreground truncate max-w-[300px]">{agent.description || 'No description'}</p>
+                    </div>
                   </TableCell>
                   <TableCell></TableCell>
-                  <TableCell>
-                    <StatusBadge status={todo.priority || 'medium'} config={PRIORITY_CONFIG} defaultKey="medium" />
-                  </TableCell>
+                  <TableCell className="text-sm font-mono">{agent.model}</TableCell>
+                  <TableCell></TableCell>
+                  <TableCell className="text-sm">{agent.whatsapp_phone || '—'}</TableCell>
                   <TableCell></TableCell>
                   <TableCell>
-                    {todo.done ? (
-                      <Badge variant="default" className="text-xs bg-green-600">Done</Badge>
-                    ) : (
-                      <Badge variant="secondary" className="text-xs">Pending</Badge>
-                    )}
+                    <StatusBadge status={agent.status} config={STATUS_CONFIG} defaultKey="draft" />
                   </TableCell>
                   <TableCell></TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => { e.stopPropagation(); toggleTodo(todo.id, todo.done) }}
-                      >
-                        {todo.done ? '↩️' : '✓'}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => { e.stopPropagation(); openEdit(todo) }}
-                      >
+                      <Button variant="ghost" size="icon" className="h-8 w-8"
+                        onClick={(e) => { e.stopPropagation(); openEdit(agent) }}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={(e) => { e.stopPropagation(); deleteTodo(todo.id) }}
-                      >
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={(e) => { e.stopPropagation(); handleDelete(agent.id) }}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -273,78 +254,63 @@ export function Dashboard() {
             page={page}
             totalPages={totalPages}
             onPageChange={setPage}
-            totalItems={filteredTodos.length}
+            totalItems={filtered.length}
             pageSize={PAGE_SIZE}
           />
         </div>
       )}
 
-      {/* View Sheet */}
-      <Sheet open={viewOpen} onOpenChange={setViewOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>{viewTodo?.text || 'Untitled'}</SheetTitle>
-          </SheetHeader>
-          <div className="grid grid-cols-2 gap-4 px-4">
-            {viewTodo && [
-              { label: 'Text', value: viewTodo.text, full: true },
-              { label: 'Status', value: viewTodo.done ? 'Done' : 'Pending', full: false },
-              { label: 'Priority', value: viewTodo.priority || 'medium', full: false },
-              { label: 'ID', value: viewTodo.id.toString(), full: false },
-            ].map(({ label, value, full }) => (
-              <div key={label} className={`space-y-1 ${full ? 'col-span-2' : ''}`}>
-                <Label className="text-muted-foreground">{label}</Label>
-                <Input readOnly value={value || '-'} className="font-mono text-sm" />
-              </div>
-            ))}
-          </div>
-          <div className="px-4 mt-4">
-            <Button
-              className="w-full"
-              onClick={() => { navigate(`/todos/detail?id=${viewTodo?.id}`); setViewOpen(false) }}
-            >
-              <Eye className="h-4 w-4 mr-2" /> Lihat Detail
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
-
       {/* Create/Edit Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>
-              {editingId ? 'Edit Todo' : 'Tambah Todo Baru'}
-            </SheetTitle>
+            <SheetTitle>{editingId ? 'Edit Agent' : 'Tambah Agent Baru'}</SheetTitle>
           </SheetHeader>
           <div className="grid grid-cols-2 gap-4 px-4">
             <div className="col-span-2 space-y-2">
-              <Label htmlFor="text">Todo</Label>
-              <Input
-                id="text"
-                placeholder="contoh: Belajar Hono"
-                value={form.text}
-                onChange={(e) => updateField('text', e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-              />
+              <Label htmlFor="name">Nama Agent</Label>
+              <Input id="name" placeholder="Nura — MHU Assistant"
+                value={form.name} onChange={(e) => updateField('name', e.target.value)} />
             </div>
             <div className="col-span-2 space-y-2">
-              <Label htmlFor="priority">Priority</Label>
-              <select
-                id="priority"
-                value={form.priority}
-                onChange={(e) => updateField('priority', e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                {PRIORITY_OPTIONS.map((opt) => (
+              <Label htmlFor="description">Deskripsi</Label>
+              <Input id="description" placeholder="AI assistant untuk travel Umrah"
+                value={form.description} onChange={(e) => updateField('description', e.target.value)} />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="system_prompt">System Prompt</Label>
+              <textarea id="system_prompt" rows={6}
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                placeholder="Kamu adalah AI assistant yang..."
+                value={form.system_prompt} onChange={(e) => updateField('system_prompt', e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="model">Model</Label>
+              <select id="model" value={form.model} onChange={(e) => updateField('model', e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                {MODEL_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <select id="status" value={form.status} onChange={(e) => updateField('status', e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                <option value="draft">Draft</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="whatsapp_phone">WhatsApp Phone (Washarp)</Label>
+              <Input id="whatsapp_phone" placeholder="6281234567890"
+                value={form.whatsapp_phone} onChange={(e) => updateField('whatsapp_phone', e.target.value)} />
+            </div>
           </div>
           <div className="px-4 mt-4">
             <Button onClick={handleSubmit} className="w-full">
-              {editingId ? 'Simpan Perubahan' : 'Tambah'}
+              {editingId ? 'Simpan Perubahan' : 'Tambah Agent'}
             </Button>
           </div>
         </SheetContent>

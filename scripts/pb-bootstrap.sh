@@ -49,6 +49,90 @@ create_collection() {
   fi
 }
 
+# ── agents ──────────────────────────────────────────────────
+create_collection "agents" '{
+  "name": "agents",
+  "type": "base",
+  "fields": [
+    {"name": "name", "type": "text", "required": true},
+    {"name": "description", "type": "text", "required": false},
+    {"name": "system_prompt", "type": "text", "required": false},
+    {"name": "model", "type": "text", "required": true},
+    {"name": "whatsapp_phone", "type": "text", "required": false},
+    {"name": "washarp_api_key", "type": "text", "required": false},
+    {"name": "washarp_api_url", "type": "url", "required": false},
+    {"name": "groq_api_key", "type": "text", "required": false},
+    {"name": "status", "type": "select", "required": true, "values": ["active","inactive","draft"], "maxSelect": 1},
+    {"name": "user_id", "type": "text", "required": true},
+    {"name": "created", "type": "autodate", "onCreate": true, "onUpdate": false},
+    {"name": "updated", "type": "autodate", "onCreate": true, "onUpdate": true}
+  ],
+  "indexes": [
+    "CREATE INDEX idx_agents_user_id ON agents (user_id)",
+    "CREATE INDEX idx_agents_status ON agents (status)"
+  ],
+  "listRule": "@request.auth.id != \"\" && user_id = @request.auth.id",
+  "viewRule": "@request.auth.id != \"\" && user_id = @request.auth.id",
+  "createRule": "@request.auth.id != \"\" && user_id = @request.auth.id",
+  "updateRule": "@request.auth.id != \"\" && user_id = @request.auth.id",
+  "deleteRule": "@request.auth.id != \"\" && user_id = @request.auth.id"
+}'
+
+# ── tools ───────────────────────────────────────────────────
+create_collection "tools" '{
+  "name": "tools",
+  "type": "base",
+  "fields": [
+    {"name": "agent_id", "type": "text", "required": true},
+    {"name": "name", "type": "text", "required": true},
+    {"name": "description", "type": "text", "required": false},
+    {"name": "method", "type": "select", "required": true, "values": ["GET","POST","PUT","PATCH","DELETE"], "maxSelect": 1},
+    {"name": "url", "type": "text", "required": true},
+    {"name": "headers", "type": "json", "required": false},
+    {"name": "body", "type": "json", "required": false},
+    {"name": "status", "type": "select", "required": true, "values": ["active","inactive"], "maxSelect": 1},
+    {"name": "user_id", "type": "text", "required": true},
+    {"name": "created", "type": "autodate", "onCreate": true, "onUpdate": false},
+    {"name": "updated", "type": "autodate", "onCreate": true, "onUpdate": true}
+  ],
+  "indexes": [
+    "CREATE INDEX idx_tools_agent_id ON tools (agent_id)",
+    "CREATE INDEX idx_tools_user_id ON tools (user_id)"
+  ],
+  "listRule": "@request.auth.id != \"\" && user_id = @request.auth.id",
+  "viewRule": "@request.auth.id != \"\" && user_id = @request.auth.id",
+  "createRule": "@request.auth.id != \"\" && user_id = @request.auth.id",
+  "updateRule": "@request.auth.id != \"\" && user_id = @request.auth.id",
+  "deleteRule": "@request.auth.id != \"\" && user_id = @request.auth.id"
+}'
+
+# ── messages ────────────────────────────────────────────────
+create_collection "messages" '{
+  "name": "messages",
+  "type": "base",
+  "fields": [
+    {"name": "agent_id", "type": "text", "required": true},
+    {"name": "phone", "type": "text", "required": true},
+    {"name": "direction", "type": "select", "required": true, "values": ["inbound","outbound"], "maxSelect": 1},
+    {"name": "content", "type": "text", "required": true},
+    {"name": "metadata", "type": "json", "required": false},
+    {"name": "status", "type": "select", "required": false, "values": ["pending","sent","delivered","read","failed"], "maxSelect": 1},
+    {"name": "user_id", "type": "text", "required": true},
+    {"name": "created", "type": "autodate", "onCreate": true, "onUpdate": false},
+    {"name": "updated", "type": "autodate", "onCreate": true, "onUpdate": true}
+  ],
+  "indexes": [
+    "CREATE INDEX idx_messages_agent_id ON messages (agent_id)",
+    "CREATE INDEX idx_messages_phone ON messages (phone)",
+    "CREATE INDEX idx_messages_user_id ON messages (user_id)"
+  ],
+  "listRule": "@request.auth.id != \"\" && user_id = @request.auth.id",
+  "viewRule": "@request.auth.id != \"\" && user_id = @request.auth.id",
+  "createRule": "",
+  "updateRule": "",
+  "deleteRule": "@request.auth.id != \"\" && user_id = @request.auth.id"
+}'
+
 # ── api_keys ────────────────────────────────────────────────
 create_collection "api_keys" '{
   "name": "api_keys",

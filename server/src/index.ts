@@ -12,6 +12,7 @@ process.on('unhandledRejection', (err) => {
 import { pb, verifyUser } from './pocketbase'
 import { createApiKey, listApiKeys, deleteApiKey, verifyApiKey } from './api-keys'
 import { createPayment, listPayments, getPayment, checkAndUpdatePaymentStatus } from './payments'
+import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, listTools, createTool, updateTool, deleteTool, listMessages } from './agents'
 
 // ── Config ──────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3000
@@ -68,6 +69,9 @@ async function apiKeyAuth(c: any, next: any) {
 // ═══════════════════════════════════════════════════════════
 
 app.use('/api/me', userAuth)
+app.use('/api/agents/*', userAuth)
+app.use('/api/agents', userAuth)
+app.use('/api/tools/*', userAuth)
 app.use('/api/todos/*', userAuth)
 app.use('/api/keys/*', userAuth)
 app.use('/api/payments/*', userAuth)
@@ -211,6 +215,124 @@ app.get('/api/transactions', async (c) => {
       metadata: r.metadata,
       created_at: r.created,
     })))
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ═══════════════════════════════════════════════════════════
+// AGENTS ROUTES
+// ═══════════════════════════════════════════════════════════
+
+app.get('/api/agents', async (c) => {
+  const user = c.get('user')
+  try {
+    const agents = await listAgents(user.id)
+    return c.json(agents)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+app.post('/api/agents', async (c) => {
+  const user = c.get('user')
+  const body = await c.req.json()
+  try {
+    const agent = await createAgent(user.id, body)
+    return c.json(agent, 201)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400)
+  }
+})
+
+app.get('/api/agents/:id', async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id')
+  try {
+    const agent = await getAgent(user.id, id)
+    return c.json(agent)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 404)
+  }
+})
+
+app.put('/api/agents/:id', async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id')
+  const body = await c.req.json()
+  try {
+    const agent = await updateAgent(user.id, id, body)
+    return c.json(agent)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400)
+  }
+})
+
+app.delete('/api/agents/:id', async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id')
+  try {
+    await deleteAgent(user.id, id)
+    return c.json({ ok: true })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400)
+  }
+})
+
+// ── Tools ───────────────────────────────────────────────────
+app.get('/api/agents/:agentId/tools', async (c) => {
+  const user = c.get('user')
+  const agentId = c.req.param('agentId')
+  try {
+    const tools = await listTools(user.id, agentId)
+    return c.json(tools)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+app.post('/api/agents/:agentId/tools', async (c) => {
+  const user = c.get('user')
+  const agentId = c.req.param('agentId')
+  const body = await c.req.json()
+  try {
+    const tool = await createTool(user.id, agentId, body)
+    return c.json(tool, 201)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400)
+  }
+})
+
+app.put('/api/tools/:id', async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id')
+  const body = await c.req.json()
+  try {
+    const tool = await updateTool(user.id, id, body)
+    return c.json(tool)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400)
+  }
+})
+
+app.delete('/api/tools/:id', async (c) => {
+  const user = c.get('user')
+  const id = c.req.param('id')
+  try {
+    await deleteTool(user.id, id)
+    return c.json({ ok: true })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400)
+  }
+})
+
+// ── Messages ────────────────────────────────────────────────
+app.get('/api/agents/:agentId/messages', async (c) => {
+  const user = c.get('user')
+  const agentId = c.req.param('agentId')
+  try {
+    const messages = await listMessages(user.id, agentId)
+    return c.json(messages)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
