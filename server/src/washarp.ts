@@ -24,8 +24,11 @@ function headers() {
 }
 
 // ── Create Session ──────────────────────────────────────────
-export async function createSession() {
-  const res = await axios.post(`${getBaseUrl()}/public/sessions`, {}, {
+export async function createSession(webhookUrl?: string) {
+  const body: any = {}
+  if (webhookUrl) body.webhook_url = webhookUrl
+
+  const res = await axios.post(`${getBaseUrl()}/public/sessions`, body, {
     headers: headers(),
     timeout: 30000,
   })

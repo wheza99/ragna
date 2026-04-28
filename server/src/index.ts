@@ -13,6 +13,7 @@ import { pb, verifyUser } from './pocketbase'
 import { createApiKey, listApiKeys, deleteApiKey, verifyApiKey } from './api-keys'
 import { createPayment, listPayments, getPayment, checkAndUpdatePaymentStatus } from './payments'
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, listTools, createTool, updateTool, deleteTool, listMessages, refreshAgentQR, checkAgentWAStatus } from './agents'
+import { createMessage } from './agents'
 
 // ── Config ──────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3000
@@ -358,6 +359,91 @@ app.get('/api/agents/:agentId/messages', async (c) => {
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
+})
+
+// ═══════════════════════════════════════════════════════════
+// WEBHOOK — receive events from Washarp
+// ═══════════════════════════════════════════════════════════
+
+app.post('/api/webhook/washarp', async (c) => {
+  const body = await c.req.json()
+  const event = body.event
+  const sessionName = body.session
+
+  if (!sessionName) return c.json({ error: 'No session' }, 400)
+
+  console.log(`[Webhook] ${event} from ${sessionName}`)
+
+  // ── Session status update ─────────────────────────────────
+  if (event === 'session.status') {
+    const payloadStatus = body.payload?.status?.toUpperCase()
+    const phone = body.me?.id
+      ? (typeof body.me.id === 'string' ? body.me.id.split('@')[0] : body.me.id?.user)
+      : null
+
+    let status = 'disconnected'
+    if (payloadStatus === 'CONNECTED') status = 'connected'
+    else if (payloadStatus === 'SCAN_QR_CODE' || payloadStatus === 'STARTING') status = 'connecting'
+    else if (payloadStatus === 'FAILED') status = 'failed'
+
+    // Find agent by washarp_waha_session
+    try {
+      const agents = await pb.admin.list('agents', `(washarp_waha_session='${sessionName}')`)
+      if (agents.length > 0) {
+        await pb.admin.update('agents', agents[0].id, {
+          washarp_status: status,
+          washarp_phone: phone || '',
+        })
+        console.log(`[Webhook] Updated agent ${agents[0].id}: status=${status}, phone=${phone}`)
+      }
+    } catch (err) {
+      console.error('[Webhook] Failed to update agent:', err)
+    }
+  }
+
+  // ── Incoming message ──────────────────────────────────────
+  if (event === 'message' && body.payload?.fromMe === false) {
+    const from = body.from_number || (body.payload?.from || '').split('@')[0]
+    const text = body.payload?.body || ''
+
+    // Find agent by session
+    try {
+      const agents = await pb.admin.list('agents', `(washarp_waha_session='${sessionName}')`)
+      if (agents.length > 0) {
+        const agent = agents[0]
+        await createMessage({
+          agent_id: agent.id,
+          phone: from,
+          direction: 'inbound',
+          content: text,
+          status: 'received',
+          user_id: agent.user_id,
+          metadata: {
+            waha_session: sessionName,
+            raw_from: body.payload?.from,
+            message_id: body.payload?.id,
+            timestamp: body.payload?.timestamp,
+          },
+        })
+        console.log(`[Webhook] Saved inbound message from ${from} for agent ${agent.id}`)
+
+        // TODO: Process with AI agent (Groq) and send reply
+      }
+    } catch (err) {
+      console.error('[Webhook] Failed to save message:', err)
+    }
+  }
+
+  // ── Message ack (delivery status) ─────────────────────────
+  if (event === 'message.ack') {
+    // TODO: Update outbound message status
+  }
+
+  return c.json({ received: true })
+})
+
+app.get('/api/webhook/washarp', (c) => {
+  return c.json({ status: 'ok', service: 'ragna-webhook' })
 })
 
 // ═══════════════════════════════════════════════════════════

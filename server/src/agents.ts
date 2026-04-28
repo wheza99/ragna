@@ -41,7 +41,8 @@ export async function createAgent(userId: string, payload: any) {
   let washarpWahaSession: string | null = null
 
   try {
-    const session = await washarp.createSession()
+    const webhookUrl = process.env.RAGNA_WEBHOOK_URL || ''
+    const session = await washarp.createSession(webhookUrl || undefined)
     washarpSessionId = session.id          // Washarp PB record ID
     washarpWahaSession = session.session_id // WAHA session name (e.g. washarp-xxxxx)
 
