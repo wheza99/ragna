@@ -1,15 +1,54 @@
 services:
-  app:
-    build: .
+  # ── PocketBase database ──────────────────────────────────
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    container_name: 004-ragna-pb
     ports:
-      - "3000-3010:3000"
+      - "9004:8090"
+    volumes:
+      - ./database/pb_data:/pb_data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8090/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - default
+
+  # ── App server ──────────────────────────────────────────
+  app:
+    build:
+      context: .
+      args:
+        - VITE_POCKETBASE_URL=${VITE_POCKETBASE_URL}
+    container_name: 004-ragna-app
+    ports:
+      - "3004:3000"
     environment:
       - PORT=3000
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - POCKETBASE_URL=http://pocketbase:8090
+      - POCKETBASE_ADMIN_EMAIL=${POCKETBASE_ADMIN_EMAIL}
+      - POCKETBASE_ADMIN_PASSWORD=${POCKETBASE_ADMIN_PASSWORD}
       - TRIPAY_API_URL=${TRIPAY_API_URL}
       - TRIPAY_API_KEY=${TRIPAY_API_KEY}
       - TRIPAY_PRIVATE_KEY=${TRIPAY_PRIVATE_KEY}
       - TRIPAY_MERCHANT_CODE=${TRIPAY_MERCHANT_CODE}
+      - WASHARP_API_URL=${WASHARP_API_URL}
+      - WASHARP_API_KEY=${WASHARP_API_KEY}
+      - RAGNA_WEBHOOK_URL=${RAGNA_WEBHOOK_URL}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    depends_on:
+      pocketbase:
+        condition: service_healthy
     restart: unless-stopped
+    networks:
+      - default
+      - npm-network
+
+networks:
+  default:
+    name: ragna_default
+  npm-network:
+    name: nginx-proxy-manager_default
+    external: true

@@ -4,3 +4,6 @@ dist
 .env
 .env.local
 .DS_Store
+database/pb_data/*
+!database/pb_data/.gitkeep
+!database/pb_data/.gitignore

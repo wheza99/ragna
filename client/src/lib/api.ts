@@ -1,8 +1,7 @@
-import { supabase } from './supabase'
+import { pb } from './pocketbase'
 
 export async function authFetch(url: string, options: RequestInit = {}) {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
+  const token = pb.authStore.token
 
   const headers = new Headers(options.headers)
   if (token) {
@@ -16,7 +15,7 @@ export async function authFetch(url: string, options: RequestInit = {}) {
 
   if (res.status === 401) {
     // Token expired, force sign out
-    await supabase.auth.signOut()
+    pb.authStore.clear()
     window.location.href = '/login'
   }
 

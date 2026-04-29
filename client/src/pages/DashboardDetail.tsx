@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams, useNavigate } from 'react-router'
 import { authFetch } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -8,63 +9,85 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import {
-  ArrowLeft, Copy, Check, Settings, FileText,
-  Plus, Trash2, Search, Loader2,
-  UploadCloud, X, Pencil,
+  ArrowLeft, Settings, Wrench, MessageSquare,
+  Plus, Trash2, Pencil, Bot,
 } from 'lucide-react'
 import { StatsCard } from '@/components/patterns/stats-card'
 import { SearchBar } from '@/components/patterns/search-bar'
 import { Pagination } from '@/components/patterns/pagination'
 import { EmptyState } from '@/components/patterns/empty-state'
 import { ConfigField } from '@/components/patterns/config-field'
-import { FileUpload } from '@/components/patterns/file-upload'
+import { StatusBadge } from '@/components/patterns/status-badge'
 
 // ── Types ───────────────────────────────────────────────────
 
-interface TodoData {
-  id: number
-  text: string
-  done: boolean
-  priority?: string
-  notes?: string
-  attachment?: string | null
+interface Agent {
+  id: string
+  name: string
+  description: string
+  system_prompt: string
+  model: string
+  washarp_session_id: string
+  washarp_phone: string
+  washarp_status: string
+  status: string
+  created_at: string
 }
 
-interface NoteForm {
-  text: string
+interface Tool {
+  id: string
+  name: string
+  description: string
+  method: string
+  url: string
+  headers: Record<string, string> | null
+  body: Record<string, unknown> | null
+  status: string
+  created_at: string
 }
 
-// ── Helpers ─────────────────────────────────────────────────
+interface Message {
+  id: string
+  phone: string
+  direction: string
+  content: string
+  status: string
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
 
-function formatDate(date: string | null) {
-  if (!date) return '-'
-  return new Date(date).toLocaleDateString('id-ID', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  })
+interface ToolForm {
+  name: string
+  description: string
+  method: string
+  url: string
+  headers: string
+  body: string
+  status: string
+}
+
+const emptyToolForm: ToolForm = {
+  name: '', description: '', method: 'GET', url: '', headers: '', body: '', status: 'active',
+}
+
+const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; className?: string }> = {
+  active: { label: 'Active', variant: 'default', className: 'bg-green-600' },
+  inactive: { label: 'Inactive', variant: 'secondary' },
+}
+
+const METHOD_COLORS: Record<string, string> = {
+  GET: 'bg-blue-600',
+  POST: 'bg-green-600',
+  PUT: 'bg-yellow-600',
+  PATCH: 'bg-orange-600',
+  DELETE: 'bg-red-600',
 }
 
 // ── Component ───────────────────────────────────────────────
@@ -72,270 +95,242 @@ function formatDate(date: string | null) {
 export function DashboardDetail() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const id = searchParams.get('id')
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Parent data (the todo itself)
-  const [todo, setTodo] = useState<{ id: number; text: string; done: boolean; priority?: string } | null>(null)
+  const [agent, setAgent] = useState<Agent | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Child data (notes/sub-tasks)
-  const [notes, setNotes] = useState<TodoData[]>([])
-  const [notesLoading, setNotesLoading] = useState(true)
-  const PAGE_SIZE = 10
-  const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
+  const [tools, setTools] = useState<Tool[]>([])
+  const [messages, setMessages] = useState<Message[]>([])
 
-  // Note detail sheet (RULE: view child detail → Sheet)
-  const [selectedNote, setSelectedNote] = useState<TodoData | null>(null)
-  const [sheetOpen, setSheetOpen] = useState(false)
+  // Tools sheet
+  const [toolSheetOpen, setToolSheetOpen] = useState(false)
+  const [editingToolId, setEditingToolId] = useState<string | null>(null)
+  const [toolForm, setToolForm] = useState<ToolForm>(emptyToolForm)
 
-  // Add/Edit note sheet
-  const [formSheetOpen, setFormSheetOpen] = useState(false)
-  const [editingNoteId, setEditingNoteId] = useState<number | null>(null)
-  const [noteForm, setNoteForm] = useState<NoteForm>({ text: '' })
-  const [submitting, setSubmitting] = useState(false)
+  // Search & pagination for messages
+  const [msgSearch, setMsgSearch] = useState('')
+  const MSG_PAGE_SIZE = 10
+  const [msgPage, setMsgPage] = useState(1)
 
-  // File upload dialog (RULE: action inside Sheet → Dialog)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [preview, setPreview] = useState<string | null>(null)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const filteredMessages = msgSearch
+    ? messages.filter((m) =>
+        m.phone.includes(msgSearch) || m.content.toLowerCase().includes(msgSearch.toLowerCase())
+      )
+    : messages
+  const msgTotalPages = Math.ceil(filteredMessages.length / MSG_PAGE_SIZE)
+  const paginatedMessages = filteredMessages.slice((msgPage - 1) * MSG_PAGE_SIZE, msgPage * MSG_PAGE_SIZE)
 
-  const filteredNotes = search
-    ? notes.filter((n) => n.text.toLowerCase().includes(search.toLowerCase()))
-    : notes
-
-  const totalPages = Math.ceil(filteredNotes.length / PAGE_SIZE)
-  const paginatedNotes = filteredNotes.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
-  // ── Fetch parent ────────────────────────────────────────
-  const fetchTodo = useCallback(async () => {
-    // In real app, this would fetch from API. Using todos as example.
-    setTodo({ id: Number(id), text: `Todo #${id}`, done: false, priority: 'medium' })
-    setLoading(false)
+  // ── Fetch agent ────────────────────────────────────────
+  const fetchAgent = useCallback(async () => {
+    if (!id) return
+    try {
+      const res = await authFetch(`/api/agents/${id}`)
+      if (!res.ok) throw new Error('Not found')
+      setAgent(await res.json())
+    } catch { setAgent(null) }
+    finally { setLoading(false) }
   }, [id])
 
-  useEffect(() => {
-    fetchTodo()
-  }, [fetchTodo])
+  useEffect(() => { fetchAgent() }, [fetchAgent])
 
-  // ── Fetch children ──────────────────────────────────────
-  const fetchNotes = useCallback(async () => {
-    // Simulated child data
-    setNotes([
-      { id: 1, text: 'Research best practices', done: true, priority: 'high' },
-      { id: 2, text: 'Write documentation', done: false, priority: 'medium', attachment: null },
-      { id: 3, text: 'Setup CI/CD pipeline', done: false, priority: 'high' },
-      { id: 4, text: 'Code review', done: true, priority: 'low' },
-      { id: 5, text: 'Deploy to staging', done: false, priority: 'medium', attachment: 'deploy-plan.pdf' },
-    ])
-    setNotesLoading(false)
-  }, [])
+  // ── Fetch tools ────────────────────────────────────────
+  const fetchTools = useCallback(async () => {
+    if (!id) return
+    try {
+      const res = await authFetch(`/api/agents/${id}/tools`)
+      setTools(await res.json())
+    } catch { setTools([]) }
+  }, [id])
 
-  useEffect(() => {
-    fetchNotes()
-  }, [fetchNotes])
+  useEffect(() => { fetchTools() }, [fetchTools])
 
-  // ── Note CRUD ────────────────────────────────────────────
-  const openCreateNote = () => {
-    setEditingNoteId(null)
-    setNoteForm({ text: '' })
-    setFormSheetOpen(true)
+  // ── Fetch messages ─────────────────────────────────────
+  const fetchMessages = useCallback(async () => {
+    if (!id) return
+    try {
+      const res = await authFetch(`/api/agents/${id}/messages`)
+      setMessages(await res.json())
+    } catch { setMessages([]) }
+  }, [id])
+
+  useEffect(() => { fetchMessages() }, [fetchMessages])
+
+  // ── Tool CRUD ──────────────────────────────────────────
+  const openCreateTool = () => {
+    setEditingToolId(null)
+    setToolForm(emptyToolForm)
+    setToolSheetOpen(true)
   }
 
-  const openEditNote = (note: TodoData) => {
-    setEditingNoteId(note.id)
-    setNoteForm({ text: note.text })
-    setFormSheetOpen(true)
+  const openEditTool = (tool: Tool) => {
+    setEditingToolId(tool.id)
+    setToolForm({
+      name: tool.name,
+      description: tool.description || '',
+      method: tool.method,
+      url: tool.url,
+      headers: tool.headers ? JSON.stringify(tool.headers, null, 2) : '',
+      body: tool.body ? JSON.stringify(tool.body, null, 2) : '',
+      status: tool.status,
+    })
+    setToolSheetOpen(true)
   }
 
-  const openNoteDetail = (note: TodoData) => {
-    setSelectedNote(note)
-    setSheetOpen(true)
-  }
+  const handleToolSubmit = async () => {
+    let parsedHeaders = null
+    let parsedBody = null
+    try { if (toolForm.headers) parsedHeaders = JSON.parse(toolForm.headers) } catch {}
+    try { if (toolForm.body) parsedBody = JSON.parse(toolForm.body) } catch {}
 
-  const handleNoteSubmit = async () => {
-    setSubmitting(true)
-    // In real app: authFetch POST/PUT
-    setFormSheetOpen(false)
-    setNoteForm({ text: '' })
-    setEditingNoteId(null)
-    fetchNotes()
-    setSubmitting(false)
-  }
-
-  const handleDeleteNote = async (noteId: number) => {
-    if (!confirm('Hapus note ini?')) return
-    // In real app: authFetch DELETE
-    fetchNotes()
-  }
-
-  // ── File upload (RULE: action inside Sheet → Dialog) ────
-  const openUploadDialog = () => {
-    setSelectedFile(null)
-    setPreview(null)
-    setDialogOpen(true)
-  }
-
-  const handleFileSelect = (file: File) => {
-    setSelectedFile(file)
-    const reader = new FileReader()
-    reader.onload = (e) => setPreview(e.target?.result as string)
-    reader.readAsDataURL(file)
-  }
-
-  const handleUpload = async () => {
-    setUploading(true)
-    // In real app: authFetch POST with FormData
-    if (selectedNote) {
-      setNotes((prev) =>
-        prev.map((n) => n.id === selectedNote.id ? { ...n, attachment: selectedFile?.name || 'uploaded' } : n)
-      )
+    const payload = {
+      name: toolForm.name,
+      description: toolForm.description || undefined,
+      method: toolForm.method,
+      url: toolForm.url,
+      headers: parsedHeaders,
+      body: parsedBody,
+      status: toolForm.status,
     }
-    setUploading(false)
-    setDialogOpen(false)
-    setPreview(null)
-    setSelectedFile(null)
+
+    if (editingToolId) {
+      await authFetch(`/api/tools/${editingToolId}`, { method: 'PUT', body: JSON.stringify(payload) })
+    } else {
+      await authFetch(`/api/agents/${id}/tools`, { method: 'POST', body: JSON.stringify(payload) })
+    }
+    setToolSheetOpen(false)
+    setToolForm(emptyToolForm)
+    setEditingToolId(null)
+    fetchTools()
   }
 
-  // ── Config fields ───────────────────────────────────────
-  const configFields: { label: string; value: string | null; full: boolean; copy: boolean }[] = todo ? [
-    { label: 'Text', value: todo.text, full: true, copy: true },
-    { label: 'Status', value: todo.done ? 'Done' : 'Pending', full: false, copy: false },
-    { label: 'Priority', value: todo.priority || 'medium', full: false, copy: false },
-    { label: 'ID', value: todo.id.toString(), full: false, copy: false },
-    { label: 'Created At', value: formatDate(new Date().toISOString()), full: false, copy: false },
+  const handleDeleteTool = async (toolId: string) => {
+    if (!confirm('Hapus tool ini?')) return
+    await authFetch(`/api/tools/${toolId}`, { method: 'DELETE' })
+    fetchTools()
+  }
+
+  // ── Config fields ──────────────────────────────────────
+  const configFields = agent ? [
+    { label: 'Name', value: agent.name, full: true, copy: true },
+    { label: 'Description', value: agent.description, full: true, copy: false },
+    { label: 'Model', value: agent.model, full: false, copy: false },
+    { label: 'Status', value: agent.status, full: false, copy: false },
+    { label: 'WAHA Session', value: agent.washarp_session_id || '—', full: false, copy: true },
+    { label: 'WA Status', value: agent.washarp_status || '—', full: false, copy: false },
+    { label: 'WA Phone', value: agent.washarp_phone || '—', full: false, copy: true },
+    { label: 'Created', value: agent.created_at ? new Date(agent.created_at).toLocaleString('id-ID') : '-', full: false, copy: false },
+    { label: 'System Prompt', value: agent.system_prompt || '—', full: true, copy: false },
   ] : []
 
-  const doneCount = filteredNotes.filter((n) => n.done).length
+  const inboundCount = filteredMessages.filter((m) => m.direction === 'inbound').length
+  const outboundCount = filteredMessages.filter((m) => m.direction === 'outbound').length
 
-  if (!id) {
-    return (
-      <div className="max-w-7xl mx-auto py-8 px-6">
-        <p className="text-muted-foreground">ID tidak ditemukan.</p>
-      </div>
-    )
-  }
+  if (!id) return <div className="max-w-7xl mx-auto py-8 px-6"><p className="text-muted-foreground">ID tidak ditemukan.</p></div>
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-6">
-      {/* Back button */}
       <Button variant="outline" size="icon" className="mb-4" onClick={() => navigate('/todos')}>
         <ArrowLeft className="h-4 w-4" />
       </Button>
 
       {loading ? (
         <p className="text-center text-muted-foreground py-8">Loading...</p>
-      ) : !todo ? (
-        <p className="text-center text-muted-foreground py-8">Todo tidak ditemukan.</p>
+      ) : !agent ? (
+        <p className="text-center text-muted-foreground py-8">Agent tidak ditemukan.</p>
       ) : (
         <>
-          {/* Header + Badge */}
           <div className="flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold">{todo.text}</h1>
-                {todo.done ? (
-                  <Badge variant="default" className="bg-green-600">Done</Badge>
-                ) : (
-                  <Badge variant="secondary">Pending</Badge>
-                )}
+                <Bot className="h-6 w-6 text-primary" />
+                <h1 className="text-2xl font-bold">{agent.name}</h1>
+                <Badge variant={agent.washarp_status === 'connected' ? 'default' : 'secondary'} className={agent.washarp_status === 'connected' ? 'bg-green-600' : ''}>
+                  WA: {agent.washarp_status || '—'}
+                </Badge>
               </div>
-              <p className="text-muted-foreground text-sm mt-1">Detail todo</p>
+              <p className="text-muted-foreground text-sm mt-1">{agent.description || 'No description'}</p>
             </div>
           </div>
 
-          {/* Quick Info Cards */}
           <div className="flex gap-4 mb-6">
-            <StatsCard value={filteredNotes.length} label="Total Notes" />
-            <StatsCard value={doneCount} label="Selesai" className="text-green-600" />
-            <StatsCard value={filteredNotes.length - doneCount} label="Pending" />
+            <StatsCard value={tools.length} label="Tools" />
+            <StatsCard value={inboundCount + outboundCount} label="Messages" />
+            <StatsCard value={inboundCount} label="Inbound" className="text-blue-600" />
+            <StatsCard value={outboundCount} label="Outbound" className="text-green-600" />
           </div>
 
-          <Tabs defaultValue="notes">
+          <Tabs defaultValue="tools">
             <TabsList>
-              <TabsTrigger value="notes" className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Notes
+              <TabsTrigger value="tools" className="flex items-center gap-2">
+                <Wrench className="h-4 w-4" /> Tools
+              </TabsTrigger>
+              <TabsTrigger value="messages" className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" /> Messages
               </TabsTrigger>
               <TabsTrigger value="config" className="flex items-center gap-2">
-                <Settings className="h-4 w-4" />
-                Configuration
+                <Settings className="h-4 w-4" /> Configuration
               </TabsTrigger>
             </TabsList>
 
-            {/* ── Notes Tab (child table) ────────────────── */}
-            <TabsContent value="notes" className="mt-6">
+            {/* ── Tools Tab ──────────────────────────────── */}
+            <TabsContent value="tools" className="mt-6">
               <div className="flex items-center justify-between mb-4">
-                <SearchBar value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Cari notes..." />
-                <Button onClick={openCreateNote}>
-                  <Plus className="h-4 w-4 mr-1" /> Tambah Note
+                <p className="text-sm text-muted-foreground">HTTP API tools yang bisa dipanggil oleh AI agent</p>
+                <Button onClick={openCreateTool}>
+                  <Plus className="h-4 w-4 mr-1" /> Tambah Tool
                 </Button>
               </div>
 
-              {notesLoading ? (
-                <p className="text-center text-muted-foreground py-8">Loading...</p>
-              ) : filteredNotes.length === 0 ? (
-                <EmptyState
-                  icon={FileText}
-                  title="notes"
-                  description='Klik "Tambah Note" untuk mulai.'
-                  search={search || undefined}
-                />
+              {tools.length === 0 ? (
+                <EmptyState icon={Wrench} title="tool" description='Klik "Tambah Tool" untuk menambahkan HTTP API tool.' />
               ) : (
                 <div className="rounded-md border">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="pl-8 w-1/2">Note</TableHead>
+                        <TableHead className="pl-8 w-2/5">Tool</TableHead>
+                        <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
+                        <TableHead>Endpoint</TableHead>
                         <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
-                        <TableHead>Attachment</TableHead>
                         <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
                         <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {paginatedNotes.map((note) => (
-                        <TableRow
-                          key={note.id}
-                          className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => openNoteDetail(note)}
-                        >
-                          <TableCell className="pl-8 font-medium">
-                            {note.text}
+                      {tools.map((tool) => (
+                        <TableRow key={tool.id}>
+                          <TableCell className="pl-8">
+                            <div>
+                              <p className="font-medium">{tool.name}</p>
+                              <p className="text-xs text-muted-foreground truncate max-w-[250px]">{tool.description || 'No description'}</p>
+                            </div>
                           </TableCell>
                           <TableCell></TableCell>
                           <TableCell>
-                            {note.done ? (
-                              <Badge variant="default" className="text-xs bg-green-600">Done</Badge>
-                            ) : (
-                              <Badge variant="secondary" className="text-xs">Pending</Badge>
-                            )}
+                            <Badge className={`text-xs text-white ${METHOD_COLORS[tool.method] || 'bg-gray-600'}`}>
+                              {tool.method}
+                            </Badge>
                           </TableCell>
                           <TableCell></TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {note.attachment || '—'}
+                          <TableCell className="text-xs font-mono max-w-[200px] truncate">{tool.url}</TableCell>
+                          <TableCell></TableCell>
+                          <TableCell>
+                            <StatusBadge status={tool.status} config={STATUS_CONFIG} defaultKey="active" />
                           </TableCell>
                           <TableCell></TableCell>
                           <TableCell>
                             <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={(e) => { e.stopPropagation(); openEditNote(note) }}
-                              >
+                              <Button variant="ghost" size="icon" className="h-8 w-8"
+                                onClick={() => openEditTool(tool)}>
                                 <Pencil className="h-4 w-4" />
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-destructive hover:text-destructive"
-                                onClick={(e) => { e.stopPropagation(); handleDeleteNote(note.id) }}
-                              >
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
+                                onClick={() => handleDeleteTool(tool.id)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </div>
@@ -344,12 +339,56 @@ export function DashboardDetail() {
                       ))}
                     </TableBody>
                   </Table>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* ── Messages Tab ──────────────────────────── */}
+            <TabsContent value="messages" className="mt-6">
+              <div className="flex items-center justify-between mb-4">
+                <SearchBar value={msgSearch} onChange={(v) => { setMsgSearch(v); setMsgPage(1) }} placeholder="Cari phone atau pesan..." />
+              </div>
+
+              {filteredMessages.length === 0 ? (
+                <EmptyState icon={MessageSquare} title="message" description="Belum ada pesan masuk atau keluar." />
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="pl-8 w-2/5">Message</TableHead>
+                        <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
+                        <TableHead>Direction</TableHead>
+                        <TableHead className="py-2"><Separator orientation="vertical" /></TableHead>
+                        <TableHead>Time</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedMessages.map((msg) => (
+                        <TableRow key={msg.id}>
+                          <TableCell className="pl-8 text-sm max-w-[300px] truncate">{msg.content}</TableCell>
+                          <TableCell></TableCell>
+                          <TableCell className="text-sm font-mono">{msg.phone}</TableCell>
+                          <TableCell></TableCell>
+                          <TableCell>
+                            <Badge variant={msg.direction === 'inbound' ? 'default' : 'secondary'}
+                              className={`text-xs ${msg.direction === 'inbound' ? 'bg-blue-600' : 'bg-green-600'}`}>
+                              {msg.direction === 'inbound' ? '← In' : '→ Out'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell></TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {msg.created_at ? new Date(msg.created_at).toLocaleString('id-ID') : '-'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                   <Pagination
-                    page={page}
-                    totalPages={totalPages}
-                    onPageChange={setPage}
-                    totalItems={filteredNotes.length}
-                    pageSize={PAGE_SIZE}
+                    page={msgPage} totalPages={msgTotalPages} onPageChange={setMsgPage}
+                    totalItems={filteredMessages.length} pageSize={MSG_PAGE_SIZE}
                   />
                 </div>
               )}
@@ -359,7 +398,7 @@ export function DashboardDetail() {
             <TabsContent value="config" className="mt-6">
               <Card className="rounded-md">
                 <CardHeader>
-                  <CardTitle className="text-base">Configuration</CardTitle>
+                  <CardTitle className="text-base">Agent Configuration</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 gap-4">
@@ -375,118 +414,61 @@ export function DashboardDetail() {
         </>
       )}
 
-      {/* ── Note Detail Sheet (RULE: view child → Sheet) ──── */}
-      <Sheet open={sheetOpen} onOpenChange={(open) => { setSheetOpen(open); if (!open) setSelectedNote(null) }}>
-        <SheetContent side="right" className="sm:max-w-md overflow-y-auto">
-          {selectedNote && (
-            <>
-              <SheetHeader>
-                <SheetTitle>{selectedNote.text}</SheetTitle>
-                <SheetDescription>Detail Note</SheetDescription>
-              </SheetHeader>
-              <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4">
-                {/* Status */}
-                <div>
-                  <Label className="text-muted-foreground text-xs">Status</Label>
-                  <div className="mt-1">
-                    {selectedNote.done ? (
-                      <Badge variant="default" className="bg-green-600">Done</Badge>
-                    ) : (
-                      <Badge variant="secondary">Pending</Badge>
-                    )}
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Priority */}
-                <div>
-                  <Label className="text-muted-foreground text-xs">Priority</Label>
-                  <p className="text-sm mt-1">{selectedNote.priority || 'medium'}</p>
-                </div>
-
-                <Separator />
-
-                {/* Attachment */}
-                <div>
-                  <Label className="text-muted-foreground text-xs">Attachment</Label>
-                  <div className="mt-2">
-                    {selectedNote.attachment ? (
-                      <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">{selectedNote.attachment}</span>
-                        <Check className="h-4 w-4 text-green-600 ml-auto" />
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">Belum ada attachment.</p>
-                    )}
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-2"
-                    onClick={openUploadDialog}
-                  >
-                    <UploadCloud className="h-3.5 w-3.5 mr-1.5" />
-                    {selectedNote.attachment ? 'Ganti File' : 'Upload File'}
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
-
-      {/* ── Upload Dialog (RULE: action in Sheet → Dialog) ── */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) { setPreview(null); setSelectedFile(null) } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Upload Attachment</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <FileUpload
-              onFileSelect={handleFileSelect}
-              preview={preview}
-              onClear={() => { setPreview(null); setSelectedFile(null) }}
-            />
-            <Button
-              className="w-full"
-              onClick={handleUpload}
-              disabled={!selectedFile || uploading}
-            >
-              {uploading ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Uploading...</>
-              ) : (
-                'Upload'
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Add/Edit Note Sheet ────────────────────────────── */}
-      <Sheet open={formSheetOpen} onOpenChange={setFormSheetOpen}>
+      {/* ── Tool Create/Edit Sheet ────────────────────────── */}
+      <Sheet open={toolSheetOpen} onOpenChange={setToolSheetOpen}>
         <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>
-              {editingNoteId ? 'Edit Note' : 'Tambah Note Baru'}
-            </SheetTitle>
+            <SheetTitle>{editingToolId ? 'Edit Tool' : 'Tambah Tool Baru'}</SheetTitle>
+            <SheetDescription>HTTP API request yang bisa dipanggil oleh AI agent</SheetDescription>
           </SheetHeader>
-          <div className="px-4 space-y-4">
+          <div className="grid grid-cols-2 gap-4 px-4">
+            <div className="col-span-2 space-y-2">
+              <Label>Name</Label>
+              <Input placeholder="GET Packages" value={toolForm.name} onChange={(e) => setToolForm((p) => ({ ...p, name: e.target.value }))} />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>Description</Label>
+              <Input placeholder="Tool untuk mendapatkan daftar paket" value={toolForm.description} onChange={(e) => setToolForm((p) => ({ ...p, description: e.target.value }))} />
+            </div>
             <div className="space-y-2">
-              <Label htmlFor="noteText">Note</Label>
-              <Input
-                id="noteText"
-                placeholder="contoh: Research best practices"
-                value={noteForm.text}
-                onChange={(e) => setNoteForm((prev) => ({ ...prev, text: e.target.value }))}
-                onKeyDown={(e) => e.key === 'Enter' && handleNoteSubmit()}
-              />
+              <Label>Method</Label>
+              <select value={toolForm.method} onChange={(e) => setToolForm((p) => ({ ...p, method: e.target.value }))}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <select value={toolForm.status} onChange={(e) => setToolForm((p) => ({ ...p, status: e.target.value }))}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>URL</Label>
+              <Input placeholder="https://api.example.com/v1/packages" value={toolForm.url} onChange={(e) => setToolForm((p) => ({ ...p, url: e.target.value }))} />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>Headers (JSON)</Label>
+              <textarea rows={4}
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                placeholder='{"X-Api-Key": "sk-xxx", "Content-Type": "application/json"}'
+                value={toolForm.headers} onChange={(e) => setToolForm((p) => ({ ...p, headers: e.target.value }))} />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label>Body (JSON)</Label>
+              <textarea rows={4}
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                placeholder='{"from": "628xxx", "to": "{{phone}}", "text": "{{reply}}"}'
+                value={toolForm.body} onChange={(e) => setToolForm((p) => ({ ...p, body: e.target.value }))} />
             </div>
           </div>
           <div className="px-4 mt-4">
-            <Button onClick={handleNoteSubmit} className="w-full" disabled={submitting}>
-              {submitting ? 'Menyimpan...' : editingNoteId ? 'Simpan Perubahan' : 'Tambah Note'}
+            <Button onClick={handleToolSubmit} className="w-full">
+              {editingToolId ? 'Simpan Perubahan' : 'Tambah Tool'}
             </Button>
           </div>
         </SheetContent>

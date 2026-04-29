@@ -132,6 +132,22 @@ function App() {
             }
           />
           <Route
+            path="/agents"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/agents/detail"
+            element={
+              <ProtectedRoute>
+                <DashboardDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/api-keys"
             element={
               <ProtectedRoute>
