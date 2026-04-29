@@ -37,6 +37,7 @@ services:
       - WASHARP_API_URL=${WASHARP_API_URL}
       - WASHARP_API_KEY=${WASHARP_API_KEY}
       - RAGNA_WEBHOOK_URL=${RAGNA_WEBHOOK_URL}
+      - GROQ_API_KEY=${GROQ_API_KEY}
     depends_on:
       pocketbase:
         condition: service_healthy

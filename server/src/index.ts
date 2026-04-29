@@ -15,6 +15,7 @@ import { createPayment, listPayments, getPayment, checkAndUpdatePaymentStatus } 
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent, listTools, createTool, updateTool, deleteTool, listMessages, refreshAgentQR, checkAgentWAStatus } from './agents'
 import { createMessage } from './agents'
 import { washarp } from './washarp'
+import { chatWithAgent } from './groq'
 
 // ── Config ──────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3000
@@ -428,9 +429,56 @@ app.post('/api/webhook/washarp', async (c) => {
         })
         console.log(`[Webhook] Saved inbound message from ${from} for agent ${agent.id}`)
 
-        // TODO: Process with AI agent (Groq) → washarp.sendText() to reply
-        // Example: const reply = await processWithGroq(agent, text)
-        //          await washarp.sendText(agent.washarp_session_id, from + '@c.us', reply)
+        // Process with AI agent (Groq) and send reply
+        ;(async () => {
+          try {
+            // Fetch agent tools
+            const agentTools = await pb.admin.list('tools', `(agent_id='${agent.id}' && status='active')`)
+            const toolDefs = agentTools.map((t: any) => ({
+              name: t.name,
+              description: t.description,
+              method: t.method,
+              url: t.url,
+              headers: t.headers,
+              body: t.body,
+            }))
+
+            const result = await chatWithAgent(
+              agent.system_prompt || 'Kamu adalah assistant yang membantu.',
+              agent.model || 'llama-3.3-70b-versatile',
+              text,
+              toolDefs,
+            )
+
+            if (result.reply) {
+              const chatId = from.includes('@') ? from : `${from}@c.us`
+              await washarp.sendText(agent.washarp_session_id, chatId, result.reply)
+
+              // Save outbound message
+              await createMessage({
+                agent_id: agent.id,
+                phone: from,
+                direction: 'outbound',
+                content: result.reply,
+                status: 'sent',
+                user_id: agent.user_id,
+                metadata: {
+                  model: result.model,
+                  usage: result.usage,
+                  tool_calls: result.toolCalls?.length || 0,
+                },
+              })
+              console.log(`[Webhook] Replied to ${from}: ${result.reply.slice(0, 50)}...`)
+            }
+
+            if (result.toolCalls?.length) {
+              console.log(`[Webhook] Tool calls: ${JSON.stringify(result.toolCalls.map((tc: any) => tc.function?.name))}`)
+              // TODO: Execute tool calls (HTTP requests) and continue conversation
+            }
+          } catch (err: any) {
+            console.error('[Webhook] AI processing error:', err?.message || err)
+          }
+        })()
       }
     } catch (err) {
       console.error('[Webhook] Failed to save message:', err)
